@@ -1,4 +1,4 @@
-GitlabHookServer
-================
+Knowed bugs :
 
-Gitlab hookserver with slack notifications.
+- If the commit message includes a & character, the slack API send a 500 error (so the & is replaced with the word " and ")
+- If the commit message includes a "" character, the slack API send a 500 error (so the " is replaced with two uniquotes : '')
