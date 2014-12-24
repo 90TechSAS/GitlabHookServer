@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	curl "github.com/andelf/go-curl"
+	"io/ioutil"
+	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +33,60 @@ var (
 type PushServ struct{}
 type MergeServ struct{}
 type BuildServ struct{}
+
+/*
+	HTTP POST request
+
+	target:		url target
+	payload:	payload to send
+
+	Returned values:
+
+	int:	HTTP response status code
+	string:	HTTP response body
+*/
+func Post(target string, payload string) (int, string) {
+	// Variables
+	var err error          // Error catching
+	var res *http.Response // HTTP response
+	var req *http.Request  // HTTP request
+	var body []byte        // Body response
+
+	// Build request
+	req, err = http.NewRequest("POST", target, bytes.NewBufferString(payload))
+	req.Header.Set("Content-Type", "application/json")
+
+	// Do request
+	client := &http.Client{}
+	client.Transport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 30 * time.Second,
+	}
+
+	res, err = client.Do(req)
+	if err != nil {
+		fmt.Println("Error : Curl POST : " + err.Error())
+		if res != nil {
+			return res.StatusCode, ""
+		} else {
+			return 0, ""
+		}
+	}
+	defer res.Body.Close()
+
+	// Read body
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		fmt.Println("Error : Curl POST body read : " + err.Error())
+	}
+
+	return res.StatusCode, string(body)
+}
 
 /*
 	Create a Slack channel
@@ -92,9 +146,7 @@ func MessageEncode(origin string) string {
 */
 func SendSlackMessage(channel, message string) {
 	// Variables
-	var payload string    // POST data sent to slack
-	var sent bool = false // Initialize sent variable
-	var err error         // Error catching
+	var payload string // POST data sent to slack
 
 	// Insert prefix on non system channels
 	if channel != systemChannel {
@@ -113,42 +165,7 @@ func SendSlackMessage(channel, message string) {
 	payload = "payload="
 	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + username + `", "text": "` + message + `", "icon_emoji": "` + icon + `"}`
 
-	// Debug information
-	if verboseMode {
-		fmt.Println("POST Payload =", payload)
-	}
-
-	// Curl POST send
-	easy := curl.EasyInit()
-	defer easy.Cleanup()
-	if easy != nil {
-		// Curl initialized
-		easy.Setopt(curl.OPT_URL, slackURL) // Set URL
-		easy.Setopt(curl.OPT_POST, true)    // Set method : POST
-		if verboseMode {
-			easy.Setopt(curl.OPT_VERBOSE, true) // Set verbose mode
-		}
-		easy.Setopt(curl.OPT_READFUNCTION,
-			func(ptr []byte, userdata interface{}) int {
-				if !sent {
-					sent = true
-					ret := copy(ptr, payload)
-					return ret
-				}
-				return 0
-			}) // Read function callback
-		easy.Setopt(curl.OPT_HTTPHEADER, []string{"Expect:"})
-		easy.Setopt(curl.OPT_POSTFIELDSIZE, len(payload))
-		if err = easy.Perform(); err != nil {
-			fmt.Println("Error : Curl :", err.Error())
-			SendSlackMessage(systemChannel, "Error : Curl : "+err.Error())
-		}
-	} else {
-		// Error => Exit with error
-		fmt.Println("Error : Curl init failed.")
-		SendSlackMessage(systemChannel, "Error : Curl init failed!")
-		os.Exit(1)
-	}
+	Post(slackURL, payload)
 
 }
 
