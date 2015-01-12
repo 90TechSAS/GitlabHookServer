@@ -1,7 +1,10 @@
 package main
 
 import (
+	"github.com/nurza/logo"
+
 	"./data"
+
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -17,14 +20,25 @@ import (
 	Global variables
 */
 var (
-	verboseMode            = true                                                                            // Enable verbose mode
-	slackURL               = "https://hooks.slack.com/services/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" // Slack API URL
-	username               = "GitLabBot"                                                                     // Bot's name
-	systemChannel          = "gitlabbot"                                                                     // Bot's system channel
-	icon                   = ":heavy_exclamation_mark:"                                                      // Bot's icon (Slack emoji)
-	currentBuildID float64 = 0                                                                               // Current build ID
-	n              string  = "%5Cn"                                                                          // Encoded line return
-	channelPrefix  string  = "dev-"                                                                          // Prefix on slack non system channel
+	ConfigFile string = "./config.json" // Configuration file
+
+	// Logging
+	l       logo.Logger
+	Loggers []*logo.Logger
+
+	// Configuration
+	BotUsername     string // Bot's username
+	BotChannel      string // Bot's system channel
+	BotIcon         string // Bot's icon (Slack emoji)
+	BotStartMessage string // Bot's start message
+	SlackAPIUrl     string // Slack API URL
+	SlackAPIToken   string // Slack API Token
+	ChannelPrefix   string // Slack channel prefix
+	Verbose         bool   // Enable verbose mode
+
+	// Misc
+	currentBuildID float64 = 0      // Current build ID
+	n              string  = "%5Cn" // Encoded line return
 )
 
 /*
@@ -33,6 +47,41 @@ var (
 type PushServ struct{}
 type MergeServ struct{}
 type BuildServ struct{}
+
+/*
+	Load configuration file
+*/
+func LoadConf() {
+	conf := struct {
+		BotUsername     string
+		BotChannel      string
+		BotIcon         string
+		BotStartMessage string
+		SlackAPIUrl     string
+		SlackAPIToken   string
+		ChannelPrefix   string
+		Verbose         bool
+	}{}
+
+	content, err := ioutil.ReadFile(ConfigFile)
+	if err != nil {
+		l.Critical("Error: Read config file error: " + err.Error())
+	}
+
+	err = json.Unmarshal(content, &conf)
+	if err != nil {
+		l.Critical("Error: Parse config file error: " + err.Error())
+	}
+
+	BotUsername = conf.BotUsername
+	BotChannel = conf.BotChannel
+	BotIcon = conf.BotIcon
+	BotStartMessage = conf.BotStartMessage
+	SlackAPIUrl = conf.SlackAPIUrl
+	SlackAPIToken = conf.SlackAPIToken
+	ChannelPrefix = conf.ChannelPrefix
+	Verbose = conf.Verbose
+}
 
 /*
 	HTTP POST request
@@ -149,8 +198,8 @@ func SendSlackMessage(channel, message string) {
 	var payload string // POST data sent to slack
 
 	// Insert prefix on non system channels
-	if channel != systemChannel {
-		channel = channelPrefix + channel
+	if channel != BotChannel {
+		channel = ChannelPrefix + channel
 	}
 
 	// Crop channel name if len(channel)>21
@@ -163,8 +212,8 @@ func SendSlackMessage(channel, message string) {
 
 	// POST Payload formating
 	payload = "payload="
-	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + username + `", "text": "` + message + `", "icon_emoji": "` + icon + `"}`
-	code, body := Post(slackURL, payload)
+	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + BotUsername + `", "text": "` + message + `", "icon_emoji": "` + BotIcon + `"}`
+	code, body := Post(SlackAPIUrl, payload)
 	if code != 200 {
 		fmt.Println("ERROR:\n", body)
 	}
@@ -189,7 +238,7 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body = buffer.String()
 
 	// Debug information
-	if verboseMode {
+	if Verbose {
 		fmt.Println("JsonString receive =", body)
 	}
 
@@ -201,7 +250,7 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Ok
 		// Debug information
-		if verboseMode {
+		if Verbose {
 			fmt.Println("JsonObject =", j)
 		}
 
@@ -239,7 +288,7 @@ func (s *MergeServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body = buffer.String()
 
 	// Debug information
-	if verboseMode {
+	if Verbose {
 		fmt.Println("JsonString receive =", body)
 	}
 
@@ -251,7 +300,7 @@ func (s *MergeServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Ok
 		// Debug information
-		if verboseMode {
+		if Verbose {
 			fmt.Println("JsonObject =", j)
 		}
 
@@ -287,7 +336,7 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body = buffer.String()
 
 	// Debug information
-	if verboseMode {
+	if Verbose {
 		fmt.Println("JsonString receive =", body)
 	}
 
@@ -299,7 +348,7 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// Ok
 		// Debug information
-		if verboseMode {
+		if Verbose {
 			fmt.Println("JsonObject =", j)
 		}
 
@@ -333,8 +382,11 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	Main function
 */
 func main() {
-	SendSlackMessage(systemChannel, "GitLab SlackBot started and ready to party hard!") // Slack notification
-	go http.ListenAndServe(":8100", &PushServ{})                                        // Run HTTP server for push hook
-	go http.ListenAndServe(":8200", &MergeServ{})                                       // Run HTTP server for merge request hook
-	http.ListenAndServe(":8300", &BuildServ{})                                          // Run HTTP server for build hook
+	l.AddTransport(logo.Console).AddColor(logo.ConsoleColor)                         // Configure Logger
+	l.EnableAllLevels()                                                              // Configure Logger
+	LoadConf()                                                                       // Load configuration
+	SendSlackMessage(BotChannel, "GitLab SlackBot started and ready to party hard!") // Slack notification
+	go http.ListenAndServe(":8100", &PushServ{})                                     // Run HTTP server for push hook
+	go http.ListenAndServe(":8200", &MergeServ{})                                    // Run HTTP server for merge request hook
+	http.ListenAndServe(":8300", &BuildServ{})                                       // Run HTTP server for build hook
 }

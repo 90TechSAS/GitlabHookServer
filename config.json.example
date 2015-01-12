@@ -6,5 +6,5 @@
    "SlackAPIUrl" :      "https://hooks.slack.com/services/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",
    "SlackAPIToken" :    "xoxp-2123456786-313456781-3123456782-5abcdd",
    "ChannelPrefix" :    "dev-",
-   "Verbose" :          true,
+   "Verbose" :          true
 }
