@@ -144,14 +144,12 @@ func Post(target string, payload string) (int, string) {
 */
 func CreateSlackChannel(chanName string) {
 	// Variables
-	var err error                                                     // Error catching
-	var url string = "https://slack.com/api/channels.join?token="     // Token API url
-	var token string = "xoxp-2874720296-3008670361-3035239562-5f7efd" // Slack token
-	var supl string = "&name=" + chanName + "&pretty=1"               // Additional request
-	var resp *http.Response                                           // Response
+	var err error                                       // Error catching
+	var supl string = "&name=" + chanName + "&pretty=1" // Additional request
+	var resp *http.Response                             // Response
 
 	// API Get
-	resp, err = http.Get(url + token + supl)
+	resp, err = http.Get("https://slack.com/api/channels.join?token=" + SlackAPIToken + supl)
 
 	if err != nil {
 		// Error
@@ -382,11 +380,11 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	Main function
 */
 func main() {
-	l.AddTransport(logo.Console).AddColor(logo.ConsoleColor)                         // Configure Logger
-	l.EnableAllLevels()                                                              // Configure Logger
-	LoadConf()                                                                       // Load configuration
-	SendSlackMessage(BotChannel, "GitLab SlackBot started and ready to party hard!") // Slack notification
-	go http.ListenAndServe(":8100", &PushServ{})                                     // Run HTTP server for push hook
-	go http.ListenAndServe(":8200", &MergeServ{})                                    // Run HTTP server for merge request hook
-	http.ListenAndServe(":8300", &BuildServ{})                                       // Run HTTP server for build hook
+	l.AddTransport(logo.Console).AddColor(logo.ConsoleColor) // Configure Logger
+	l.EnableAllLevels()                                      // Configure Logger
+	LoadConf()                                               // Load configuration
+	SendSlackMessage(BotChannel, BotStartMessage)            // Slack notification
+	go http.ListenAndServe(":8100", &PushServ{})             // Run HTTP server for push hook
+	go http.ListenAndServe(":8200", &MergeServ{})            // Run HTTP server for merge request hook
+	http.ListenAndServe(":8300", &BuildServ{})               // Run HTTP server for build hook
 }
