@@ -18,7 +18,7 @@ import (
 */
 var (
 	verboseMode            = true                                                                            // Enable verbose mode
-	slackURL               = "https://hooks.slack.com/services/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" // Slack API URL
+	slackURL               = "https://hooks.slack.com/services/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" // Slack API URL
 	username               = "GitLabBot"                                                                     // Bot's name
 	systemChannel          = "gitlabbot"                                                                     // Bot's system channel
 	icon                   = ":heavy_exclamation_mark:"                                                      // Bot's icon (Slack emoji)
@@ -54,7 +54,7 @@ func Post(target string, payload string) (int, string) {
 
 	// Build request
 	req, err = http.NewRequest("POST", target, bytes.NewBufferString(payload))
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	// Do request
 	client := &http.Client{}
@@ -164,9 +164,10 @@ func SendSlackMessage(channel, message string) {
 	// POST Payload formating
 	payload = "payload="
 	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + username + `", "text": "` + message + `", "icon_emoji": "` + icon + `"}`
-
-	Post(slackURL, payload)
-
+	code, body := Post(slackURL, payload)
+	if code != 200 {
+		fmt.Println("ERROR:\n", body)
+	}
 }
 
 /*
