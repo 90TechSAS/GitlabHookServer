@@ -29,6 +29,9 @@ var (
 	BotUsername     string     // Bot's username
 	BotChannel      string     // Bot's system channel
 	BotIcon         string     // Bot's icon (Slack emoji)
+	PushIcon        string     // Push icon (Slack emoji)
+	MergeIcon       string     // Merge icon (Slack emoji)
+	BuildIcon       string     // Build icon (Slack emoji)
 	BotStartMessage string     // Bot's start message
 	SlackAPIUrl     string     // Slack API URL
 	SlackAPIToken   string     // Slack API Token
@@ -42,6 +45,13 @@ var (
 	// Misc
 	currentBuildID float64 = 0      // Current build ID
 	n              string  = "%5Cn" // Encoded line return
+)
+
+const (
+	Bot   int = iota
+	Push  int = iota
+	Merge int = iota
+	Build int = iota
 )
 
 /*
@@ -60,6 +70,9 @@ func LoadConf() {
 		BotUsername     string
 		BotChannel      string
 		BotIcon         string
+		PushIcon        string
+		MergeIcon       string
+		BuildIcon       string
 		BotStartMessage string
 		SlackAPIUrl     string
 		SlackAPIToken   string
@@ -84,6 +97,9 @@ func LoadConf() {
 	BotUsername = conf.BotUsername
 	BotChannel = conf.BotChannel
 	BotIcon = conf.BotIcon
+	PushIcon = conf.PushIcon
+	MergeIcon = conf.MergeIcon
+	BuildIcon = conf.BuildIcon
 	BotStartMessage = conf.BotStartMessage
 	SlackAPIUrl = conf.SlackAPIUrl
 	SlackAPIToken = conf.SlackAPIToken
@@ -200,9 +216,10 @@ func MessageEncode(origin string) string {
 
 	@param channel : Targeted channel (without the #)
 */
-func SendSlackMessage(channel, message string) {
+func SendSlackMessage(channel, message string, typeMessage int) {
 	// Variables
 	var payload string // POST data sent to slack
+	var icon string    // Slack emoji
 
 	// toLower(channel)
 	channel = strings.ToLower(channel)
@@ -231,9 +248,21 @@ RedirectBreak:
 	// Create channel if not exists
 	CreateSlackChannel(channel)
 
+	// Set icon
+	switch typeMessage {
+	case Bot:
+		icon = BotIcon
+	case Push:
+		icon = PushIcon
+	case Merge:
+		icon = MergeIcon
+	case Build:
+		icon = BuildIcon
+	}
+
 	// POST Payload formating
 	payload = "payload="
-	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + BotUsername + `", "text": "` + message + `", "icon_emoji": "` + BotIcon + `"}`
+	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + BotUsername + `", "text": "` + message + `", "icon_emoji": "` + icon + `"}`
 	code, body := Post(SlackAPIUrl, payload)
 	if code != 200 {
 		l.Error("ERROR:\n", body)
@@ -286,7 +315,7 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		message += "[PUSH] " + n + "Push on *" + j.Repository.Name + "* by *" + j.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
 		message += "Last commit : <" + lastCommit.Url + "|" + lastCommit.Id + "> :" + n                                                                  // Second line
 		message += "```" + MessageEncode(lastCommit.Message) + "```"                                                                                     // Third line (last commit message)
-		SendSlackMessage(strings.ToLower(j.Repository.Name), message)
+		SendSlackMessage(strings.ToLower(j.Repository.Name), message, Push)
 	}
 }
 
@@ -334,7 +363,7 @@ func (s *MergeServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Message
 		message += "[MERGE REQUEST " + strings.ToUpper(j.Object_attributes.State) + "] " + n + "Target : *" + j.Object_attributes.Target.Name + "/" + j.Object_attributes.Target_branch + "* Source : *" + j.Object_attributes.Source.Name + "/" + j.Object_attributes.Source_branch + "* : at *" + dateString + "* :" + n // First line
 		message += "```" + MessageEncode(j.Object_attributes.Description) + "```"                                                                                                                                                                                                                                          // Third line (last commit message)
-		SendSlackMessage(strings.ToLower(j.Object_attributes.Target.Name), message)
+		SendSlackMessage(strings.ToLower(j.Object_attributes.Target.Name), message, Merge)
 	}
 }
 
@@ -390,7 +419,7 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			message += "[BUILD] " + n + strings.ToUpper(j.Build_status) + " : Push on *" + j.Push_data.Repository.Name + "* by *" + j.Push_data.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
 			message += "Last commit : <" + lastCommit.Url + "|" + lastCommit.Id + "> :" + n                                                                                                                            // Second line
 			message += "```" + MessageEncode(lastCommit.Message) + "```"                                                                                                                                               // Third line (last commit message)
-			SendSlackMessage(strings.ToLower(j.Push_data.Repository.Name), message)
+			SendSlackMessage(strings.ToLower(j.Push_data.Repository.Name), message, Build)
 		} else {
 			// Already sent
 			// Do nothing
@@ -406,7 +435,7 @@ func main() {
 	l.AddTransport(logo.Console).AddColor(logo.ConsoleColor) // Configure Logger
 	l.EnableAllLevels()                                      // Configure Logger
 	LoadConf()                                               // Load configuration
-	SendSlackMessage(BotChannel, BotStartMessage)            // Slack notification
+	SendSlackMessage(BotChannel, BotStartMessage, Bot)       // Slack notification
 	go http.ListenAndServe(":8100", &PushServ{})             // Run HTTP server for push hook
 	go http.ListenAndServe(":8200", &MergeServ{})            // Run HTTP server for merge request hook
 	http.ListenAndServe(":8300", &BuildServ{})               // Run HTTP server for build hook
