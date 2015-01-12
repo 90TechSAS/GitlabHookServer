@@ -1,13 +1,16 @@
 package main
 
 import (
+	"github.com/nurza/logo"
+
 	"./data"
+
 	"bytes"
 	"encoding/json"
-	"fmt"
-	curl "github.com/andelf/go-curl"
+	// "fmt"
+	"io/ioutil"
+	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -17,14 +20,25 @@ import (
 	Global variables
 */
 var (
-	verboseMode            = true                                                                            // Enable verbose mode
-	slackURL               = "https://hooks.slack.com/services/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" // Slack API URL
-	username               = "GitLabBot"                                                                     // Bot's name
-	systemChannel          = "gitlabbot"                                                                     // Bot's system channel
-	icon                   = ":heavy_exclamation_mark:"                                                      // Bot's icon (Slack emoji)
-	currentBuildID float64 = 0                                                                               // Current build ID
-	n              string  = "%5Cn"                                                                          // Encoded line return
-	channelPrefix  string  = "dev-"                                                                          // Prefix on slack non system channel
+	ConfigFile string = "./config.json" // Configuration file
+
+	// Logging
+	l       logo.Logger
+	Loggers []*logo.Logger
+
+	// Configuration
+	BotUsername     string // Bot's username
+	BotChannel      string // Bot's system channel
+	BotIcon         string // Bot's icon (Slack emoji)
+	BotStartMessage string // Bot's start message
+	SlackAPIUrl     string // Slack API URL
+	SlackAPIToken   string // Slack API Token
+	ChannelPrefix   string // Slack channel prefix
+	Verbose         bool   // Enable verbose mode
+
+	// Misc
+	currentBuildID float64 = 0      // Current build ID
+	n              string  = "%5Cn" // Encoded line return
 )
 
 /*
@@ -35,27 +49,114 @@ type MergeServ struct{}
 type BuildServ struct{}
 
 /*
+	Load configuration file
+*/
+func LoadConf() {
+	conf := struct {
+		BotUsername     string
+		BotChannel      string
+		BotIcon         string
+		BotStartMessage string
+		SlackAPIUrl     string
+		SlackAPIToken   string
+		ChannelPrefix   string
+		Verbose         bool
+	}{}
+
+	content, err := ioutil.ReadFile(ConfigFile)
+	if err != nil {
+		l.Critical("Error: Read config file error: " + err.Error())
+	}
+
+	err = json.Unmarshal(content, &conf)
+	if err != nil {
+		l.Critical("Error: Parse config file error: " + err.Error())
+	}
+
+	BotUsername = conf.BotUsername
+	BotChannel = conf.BotChannel
+	BotIcon = conf.BotIcon
+	BotStartMessage = conf.BotStartMessage
+	SlackAPIUrl = conf.SlackAPIUrl
+	SlackAPIToken = conf.SlackAPIToken
+	ChannelPrefix = conf.ChannelPrefix
+	Verbose = conf.Verbose
+}
+
+/*
+	HTTP POST request
+
+	target:		url target
+	payload:	payload to send
+
+	Returned values:
+
+	int:	HTTP response status code
+	string:	HTTP response body
+*/
+func Post(target string, payload string) (int, string) {
+	// Variables
+	var err error          // Error catching
+	var res *http.Response // HTTP response
+	var req *http.Request  // HTTP request
+	var body []byte        // Body response
+
+	// Build request
+	req, err = http.NewRequest("POST", target, bytes.NewBufferString(payload))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	// Do request
+	client := &http.Client{}
+	client.Transport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 30 * time.Second,
+	}
+
+	res, err = client.Do(req)
+	if err != nil {
+		l.Error("Error : Curl POST : " + err.Error())
+		if res != nil {
+			return res.StatusCode, ""
+		} else {
+			return 0, ""
+		}
+	}
+	defer res.Body.Close()
+
+	// Read body
+	body, err = ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		l.Error("Error : Curl POST body read : " + err.Error())
+	}
+
+	return res.StatusCode, string(body)
+}
+
+/*
 	Create a Slack channel
 
 	@param chanName : The Slack channel name (without the #)
 */
 func CreateSlackChannel(chanName string) {
 	// Variables
-	var err error                                                     // Error catching
-	var url string = "https://slack.com/api/channels.join?token="     // Token API url
-	var token string = "xoxp-2874720296-3008670361-3035239562-5f7efd" // Slack token
-	var supl string = "&name=" + chanName + "&pretty=1"               // Additional request
-	var resp *http.Response                                           // Response
+	var err error                                       // Error catching
+	var supl string = "&name=" + chanName + "&pretty=1" // Additional request
+	var resp *http.Response                             // Response
 
 	// API Get
-	resp, err = http.Get(url + token + supl)
+	resp, err = http.Get("https://slack.com/api/channels.join?token=" + SlackAPIToken + supl)
 
 	if err != nil {
 		// Error
-		fmt.Println("Error : CreateSlackChannel :", err, "\nResponse :", resp)
+		l.Error("Error : CreateSlackChannel :", err, "\nResponse :", resp)
 	} else {
 		// Ok
-		fmt.Println("CreateSlackChannel OK\nResponse :", resp)
+		l.Verbose("CreateSlackChannel OK\nResponse :", resp)
 	}
 }
 
@@ -92,13 +193,11 @@ func MessageEncode(origin string) string {
 */
 func SendSlackMessage(channel, message string) {
 	// Variables
-	var payload string    // POST data sent to slack
-	var sent bool = false // Initialize sent variable
-	var err error         // Error catching
+	var payload string // POST data sent to slack
 
 	// Insert prefix on non system channels
-	if channel != systemChannel {
-		channel = channelPrefix + channel
+	if channel != BotChannel {
+		channel = ChannelPrefix + channel
 	}
 
 	// Crop channel name if len(channel)>21
@@ -111,45 +210,11 @@ func SendSlackMessage(channel, message string) {
 
 	// POST Payload formating
 	payload = "payload="
-	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + username + `", "text": "` + message + `", "icon_emoji": "` + icon + `"}`
-
-	// Debug information
-	if verboseMode {
-		fmt.Println("POST Payload =", payload)
+	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + BotUsername + `", "text": "` + message + `", "icon_emoji": "` + BotIcon + `"}`
+	code, body := Post(SlackAPIUrl, payload)
+	if code != 200 {
+		l.Error("ERROR:\n", body)
 	}
-
-	// Curl POST send
-	easy := curl.EasyInit()
-	defer easy.Cleanup()
-	if easy != nil {
-		// Curl initialized
-		easy.Setopt(curl.OPT_URL, slackURL) // Set URL
-		easy.Setopt(curl.OPT_POST, true)    // Set method : POST
-		if verboseMode {
-			easy.Setopt(curl.OPT_VERBOSE, true) // Set verbose mode
-		}
-		easy.Setopt(curl.OPT_READFUNCTION,
-			func(ptr []byte, userdata interface{}) int {
-				if !sent {
-					sent = true
-					ret := copy(ptr, payload)
-					return ret
-				}
-				return 0
-			}) // Read function callback
-		easy.Setopt(curl.OPT_HTTPHEADER, []string{"Expect:"})
-		easy.Setopt(curl.OPT_POSTFIELDSIZE, len(payload))
-		if err = easy.Perform(); err != nil {
-			fmt.Println("Error : Curl :", err.Error())
-			SendSlackMessage(systemChannel, "Error : Curl : "+err.Error())
-		}
-	} else {
-		// Error => Exit with error
-		fmt.Println("Error : Curl init failed.")
-		SendSlackMessage(systemChannel, "Error : Curl init failed!")
-		os.Exit(1)
-	}
-
 }
 
 /*
@@ -171,20 +236,20 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body = buffer.String()
 
 	// Debug information
-	if verboseMode {
-		fmt.Println("JsonString receive =", body)
+	if Verbose {
+		l.Debug("JsonString receive =", body)
 	}
 
 	// Parse json and put it in a the data.Build structure
 	err = json.Unmarshal([]byte(body), &j)
 	if err != nil {
 		// Error
-		fmt.Println("Error : Json parser failed :", err)
+		l.Error("Error : Json parser failed :", err)
 	} else {
 		// Ok
 		// Debug information
-		if verboseMode {
-			fmt.Println("JsonObject =", j)
+		if Verbose {
+			l.Debug("JsonObject =", j)
 		}
 
 		// Send the message
@@ -221,20 +286,20 @@ func (s *MergeServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body = buffer.String()
 
 	// Debug information
-	if verboseMode {
-		fmt.Println("JsonString receive =", body)
+	if Verbose {
+		l.Debug("JsonString receive =", body)
 	}
 
 	// Parse json and put it in a the data.Build structure
 	err = json.Unmarshal([]byte(body), &j)
 	if err != nil {
 		// Error
-		fmt.Println("Error : Json parser failed :", err)
+		l.Error("Error : Json parser failed :", err)
 	} else {
 		// Ok
 		// Debug information
-		if verboseMode {
-			fmt.Println("JsonObject =", j)
+		if Verbose {
+			l.Debug("JsonObject =", j)
 		}
 
 		// Send the message
@@ -269,20 +334,20 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body = buffer.String()
 
 	// Debug information
-	if verboseMode {
-		fmt.Println("JsonString receive =", body)
+	if Verbose {
+		l.Debug("JsonString receive =", body)
 	}
 
 	// Parse json and put it in a the data.Build structure
 	err = json.Unmarshal([]byte(body), &j)
 	if err != nil {
 		// Error
-		fmt.Println("Error : Json parser failed :", err)
+		l.Error("Error : Json parser failed :", err)
 	} else {
 		// Ok
 		// Debug information
-		if verboseMode {
-			fmt.Println("JsonObject =", j)
+		if Verbose {
+			l.Debug("JsonObject =", j)
 		}
 
 		// Test if the message is already sent
@@ -315,8 +380,11 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	Main function
 */
 func main() {
-	SendSlackMessage(systemChannel, "GitLab SlackBot started and ready to party hard!") // Slack notification
-	go http.ListenAndServe(":8100", &PushServ{})                                        // Run HTTP server for push hook
-	go http.ListenAndServe(":8200", &MergeServ{})                                       // Run HTTP server for merge request hook
-	http.ListenAndServe(":8300", &BuildServ{})                                          // Run HTTP server for build hook
+	l.AddTransport(logo.Console).AddColor(logo.ConsoleColor) // Configure Logger
+	l.EnableAllLevels()                                      // Configure Logger
+	LoadConf()                                               // Load configuration
+	SendSlackMessage(BotChannel, BotStartMessage)            // Slack notification
+	go http.ListenAndServe(":8100", &PushServ{})             // Run HTTP server for push hook
+	go http.ListenAndServe(":8200", &MergeServ{})            // Run HTTP server for merge request hook
+	http.ListenAndServe(":8300", &BuildServ{})               // Run HTTP server for build hook
 }
