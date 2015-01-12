@@ -7,7 +7,7 @@ import (
 
 	"bytes"
 	"encoding/json"
-	"fmt"
+	// "fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -118,7 +118,7 @@ func Post(target string, payload string) (int, string) {
 
 	res, err = client.Do(req)
 	if err != nil {
-		fmt.Println("Error : Curl POST : " + err.Error())
+		l.Error("Error : Curl POST : " + err.Error())
 		if res != nil {
 			return res.StatusCode, ""
 		} else {
@@ -131,7 +131,7 @@ func Post(target string, payload string) (int, string) {
 	body, err = ioutil.ReadAll(res.Body)
 	res.Body.Close()
 	if err != nil {
-		fmt.Println("Error : Curl POST body read : " + err.Error())
+		l.Error("Error : Curl POST body read : " + err.Error())
 	}
 
 	return res.StatusCode, string(body)
@@ -155,10 +155,10 @@ func CreateSlackChannel(chanName string) {
 
 	if err != nil {
 		// Error
-		fmt.Println("Error : CreateSlackChannel :", err, "\nResponse :", resp)
+		l.Error("Error : CreateSlackChannel :", err, "\nResponse :", resp)
 	} else {
 		// Ok
-		fmt.Println("CreateSlackChannel OK\nResponse :", resp)
+		l.Verbose("CreateSlackChannel OK\nResponse :", resp)
 	}
 }
 
@@ -215,7 +215,7 @@ func SendSlackMessage(channel, message string) {
 	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + BotUsername + `", "text": "` + message + `", "icon_emoji": "` + BotIcon + `"}`
 	code, body := Post(SlackAPIUrl, payload)
 	if code != 200 {
-		fmt.Println("ERROR:\n", body)
+		l.Error("ERROR:\n", body)
 	}
 }
 
@@ -239,19 +239,19 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Debug information
 	if Verbose {
-		fmt.Println("JsonString receive =", body)
+		l.Debug("JsonString receive =", body)
 	}
 
 	// Parse json and put it in a the data.Build structure
 	err = json.Unmarshal([]byte(body), &j)
 	if err != nil {
 		// Error
-		fmt.Println("Error : Json parser failed :", err)
+		l.Error("Error : Json parser failed :", err)
 	} else {
 		// Ok
 		// Debug information
 		if Verbose {
-			fmt.Println("JsonObject =", j)
+			l.Debug("JsonObject =", j)
 		}
 
 		// Send the message
@@ -289,19 +289,19 @@ func (s *MergeServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Debug information
 	if Verbose {
-		fmt.Println("JsonString receive =", body)
+		l.Debug("JsonString receive =", body)
 	}
 
 	// Parse json and put it in a the data.Build structure
 	err = json.Unmarshal([]byte(body), &j)
 	if err != nil {
 		// Error
-		fmt.Println("Error : Json parser failed :", err)
+		l.Error("Error : Json parser failed :", err)
 	} else {
 		// Ok
 		// Debug information
 		if Verbose {
-			fmt.Println("JsonObject =", j)
+			l.Debug("JsonObject =", j)
 		}
 
 		// Send the message
@@ -337,19 +337,19 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Debug information
 	if Verbose {
-		fmt.Println("JsonString receive =", body)
+		l.Debug("JsonString receive =", body)
 	}
 
 	// Parse json and put it in a the data.Build structure
 	err = json.Unmarshal([]byte(body), &j)
 	if err != nil {
 		// Error
-		fmt.Println("Error : Json parser failed :", err)
+		l.Error("Error : Json parser failed :", err)
 	} else {
 		// Ok
 		// Debug information
 		if Verbose {
-			fmt.Println("JsonObject =", j)
+			l.Debug("JsonObject =", j)
 		}
 
 		// Test if the message is already sent
