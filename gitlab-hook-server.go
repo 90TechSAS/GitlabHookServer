@@ -7,7 +7,6 @@ import (
 
 	"bytes"
 	"encoding/json"
-	// "fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -27,14 +26,18 @@ var (
 	Loggers []*logo.Logger
 
 	// Configuration
-	BotUsername     string // Bot's username
-	BotChannel      string // Bot's system channel
-	BotIcon         string // Bot's icon (Slack emoji)
-	BotStartMessage string // Bot's start message
-	SlackAPIUrl     string // Slack API URL
-	SlackAPIToken   string // Slack API Token
-	ChannelPrefix   string // Slack channel prefix
-	Verbose         bool   // Enable verbose mode
+	BotUsername     string     // Bot's username
+	BotChannel      string     // Bot's system channel
+	BotIcon         string     // Bot's icon (Slack emoji)
+	BotStartMessage string     // Bot's start message
+	SlackAPIUrl     string     // Slack API URL
+	SlackAPIToken   string     // Slack API Token
+	ChannelPrefix   string     // Slack channel prefix
+	Verbose         bool       // Enable verbose mode
+	Redirect        []struct { // List of channel redirect
+		Channel      string
+		Repositories []string
+	}
 
 	// Misc
 	currentBuildID float64 = 0      // Current build ID
@@ -52,6 +55,7 @@ type BuildServ struct{}
 	Load configuration file
 */
 func LoadConf() {
+
 	conf := struct {
 		BotUsername     string
 		BotChannel      string
@@ -61,6 +65,10 @@ func LoadConf() {
 		SlackAPIToken   string
 		ChannelPrefix   string
 		Verbose         bool
+		Redirect        []struct {
+			Channel      string
+			Repositories []string
+		}
 	}{}
 
 	content, err := ioutil.ReadFile(ConfigFile)
@@ -81,6 +89,7 @@ func LoadConf() {
 	SlackAPIToken = conf.SlackAPIToken
 	ChannelPrefix = conf.ChannelPrefix
 	Verbose = conf.Verbose
+	Redirect = conf.Redirect
 }
 
 /*
@@ -194,6 +203,20 @@ func MessageEncode(origin string) string {
 func SendSlackMessage(channel, message string) {
 	// Variables
 	var payload string // POST data sent to slack
+
+	// toLower(channel)
+	channel = strings.ToLower(channel)
+
+	// Redirect channel
+RedirectBreak:
+	for _, redirect := range Redirect {
+		for _, repo := range redirect.Repositories {
+			if channel == repo {
+				channel = redirect.Channel
+				break RedirectBreak
+			}
+		}
+	}
 
 	// Insert prefix on non system channels
 	if channel != BotChannel {
