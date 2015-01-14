@@ -7,6 +7,7 @@ import (
 
 	"bytes"
 	"encoding/json"
+	"flag"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -19,8 +20,6 @@ import (
 	Global variables
 */
 var (
-	ConfigFile string = "./config.json" // Configuration file
-
 	// Logging
 	l       logo.Logger
 	Loggers []*logo.Logger
@@ -45,6 +44,13 @@ var (
 	// Misc
 	currentBuildID float64 = 0      // Current build ID
 	n              string  = "%5Cn" // Encoded line return
+)
+
+/*
+	Flags
+*/
+var (
+	ConfigFile = flag.String("f", "config.json", "Configuration file")
 )
 
 const (
@@ -84,7 +90,7 @@ func LoadConf() {
 		}
 	}{}
 
-	content, err := ioutil.ReadFile(ConfigFile)
+	content, err := ioutil.ReadFile(*ConfigFile)
 	if err != nil {
 		l.Critical("Error: Read config file error: " + err.Error())
 	}
@@ -222,28 +228,37 @@ func SendSlackMessage(channel, message string, typeMessage int) {
 	var icon string    // Slack emoji
 
 	// toLower(channel)
+	l.Silly("toLower =", channel)
 	channel = strings.ToLower(channel)
+	l.Silly("toLower =", channel)
 
 	// Redirect channel
+	l.Silly("RedirectBreak =", channel)
 RedirectBreak:
 	for _, redirect := range Redirect {
 		for _, repo := range redirect.Repositories {
 			if channel == repo {
+				l.Silly("RedirectBreakSet", channel, "=", redirect.Channel)
 				channel = redirect.Channel
 				break RedirectBreak
 			}
 		}
 	}
+	l.Silly("RedirectBreak =", channel)
 
 	// Insert prefix on non system channels
+	l.Silly("ChannelPrefix =", channel)
 	if channel != BotChannel {
 		channel = ChannelPrefix + channel
 	}
+	l.Silly("ChannelPrefix =", channel)
 
 	// Crop channel name if len(channel)>21
+	l.Silly("Crop =", channel)
 	if len(channel) > 21 {
 		channel = channel[:21]
 	}
+	l.Silly("Crop =", channel)
 
 	// Create channel if not exists
 	CreateSlackChannel(channel)
@@ -263,9 +278,20 @@ RedirectBreak:
 	// POST Payload formating
 	payload = "payload="
 	payload += `{"channel": "#` + strings.ToLower(channel) + `", "username": "` + BotUsername + `", "text": "` + message + `", "icon_emoji": "` + icon + `"}`
+
+	// Debug information
+	if Verbose {
+		l.Debug("payload =", payload)
+	}
+
 	code, body := Post(SlackAPIUrl, payload)
 	if code != 200 {
-		l.Error("ERROR:\n", body)
+		l.Error("Error post, Slack API returned:", body)
+	}
+
+	// Debug information
+	if Verbose {
+		l.Debug("Slack API returned:", body)
 	}
 }
 
@@ -282,6 +308,9 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error           // Error catching
 	var message string = "" // Bot's message
 	var date time.Time      // Time of the last commit
+
+	// Log
+	l.Info("Push Request")
 
 	// Read http request body and put it in a string
 	buffer.ReadFrom(r.Body)
@@ -315,7 +344,7 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		message += "[PUSH] " + n + "Push on *" + j.Repository.Name + "* by *" + j.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
 		message += "Last commit : <" + lastCommit.Url + "|" + lastCommit.Id + "> :" + n                                                                  // Second line
 		message += "```" + MessageEncode(lastCommit.Message) + "```"                                                                                     // Third line (last commit message)
-		SendSlackMessage(strings.ToLower(j.Repository.Name), message, Push)
+		SendSlackMessage(j.Repository.Name, message, Push)
 	}
 }
 
@@ -332,6 +361,9 @@ func (s *MergeServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error           // Error catching
 	var message string = "" // Bot's message
 	var date time.Time      // Time of the last commit
+
+	// Log
+	l.Info("Merge Request")
 
 	// Read http request body and put it in a string
 	buffer.ReadFrom(r.Body)
@@ -363,7 +395,7 @@ func (s *MergeServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Message
 		message += "[MERGE REQUEST " + strings.ToUpper(j.Object_attributes.State) + "] " + n + "Target : *" + j.Object_attributes.Target.Name + "/" + j.Object_attributes.Target_branch + "* Source : *" + j.Object_attributes.Source.Name + "/" + j.Object_attributes.Source_branch + "* : at *" + dateString + "* :" + n // First line
 		message += "```" + MessageEncode(j.Object_attributes.Description) + "```"                                                                                                                                                                                                                                          // Third line (last commit message)
-		SendSlackMessage(strings.ToLower(j.Object_attributes.Target.Name), message, Merge)
+		SendSlackMessage(j.Object_attributes.Target.Name, message, Merge)
 	}
 }
 
@@ -380,6 +412,9 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error           // Error catching
 	var message string = "" // Bot's message
 	var date time.Time      // Time of the last commit
+
+	// Log
+	l.Info("Build Request")
 
 	// Read http request body and put it in a string
 	buffer.ReadFrom(r.Body)
@@ -419,7 +454,7 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			message += "[BUILD] " + n + strings.ToUpper(j.Build_status) + " : Push on *" + j.Push_data.Repository.Name + "* by *" + j.Push_data.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
 			message += "Last commit : <" + lastCommit.Url + "|" + lastCommit.Id + "> :" + n                                                                                                                            // Second line
 			message += "```" + MessageEncode(lastCommit.Message) + "```"                                                                                                                                               // Third line (last commit message)
-			SendSlackMessage(strings.ToLower(j.Push_data.Repository.Name), message, Build)
+			SendSlackMessage(j.Push_data.Repository.Name, message, Build)
 		} else {
 			// Already sent
 			// Do nothing
@@ -432,10 +467,12 @@ func (s *BuildServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	Main function
 */
 func main() {
+	flag.Parse()                                             // Parse flags
 	l.AddTransport(logo.Console).AddColor(logo.ConsoleColor) // Configure Logger
 	l.EnableAllLevels()                                      // Configure Logger
 	LoadConf()                                               // Load configuration
 	SendSlackMessage(BotChannel, BotStartMessage, Bot)       // Slack notification
+	l.Info(BotStartMessage)                                  // Logging
 	go http.ListenAndServe(":8100", &PushServ{})             // Run HTTP server for push hook
 	go http.ListenAndServe(":8200", &MergeServ{})            // Run HTTP server for merge request hook
 	http.ListenAndServe(":8300", &BuildServ{})               // Run HTTP server for build hook
