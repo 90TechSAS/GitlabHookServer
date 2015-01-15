@@ -36,6 +36,7 @@ var (
 	SlackAPIToken   string     // Slack API Token
 	ChannelPrefix   string     // Slack channel prefix
 	Verbose         bool       // Enable verbose mode
+	HttpTimeout     int        // Http timeout in second
 	Redirect        []struct { // List of channel redirect
 		Channel      string
 		Repositories []string
@@ -84,6 +85,7 @@ func LoadConf() {
 		SlackAPIToken   string
 		ChannelPrefix   string
 		Verbose         bool
+		HttpTimeout     float64
 		Redirect        []struct {
 			Channel      string
 			Repositories []string
@@ -111,6 +113,7 @@ func LoadConf() {
 	SlackAPIToken = conf.SlackAPIToken
 	ChannelPrefix = conf.ChannelPrefix
 	Verbose = conf.Verbose
+	HttpTimeout = int(conf.HttpTimeout)
 	Redirect = conf.Redirect
 }
 
@@ -141,10 +144,10 @@ func Post(target string, payload string) (int, string) {
 	client.Transport = &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		Dial: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
+			Timeout:   time.Duration(HttpTimeout) * time.Second,
+			KeepAlive: time.Duration(HttpTimeout) * time.Second,
 		}).Dial,
-		TLSHandshakeTimeout: 30 * time.Second,
+		TLSHandshakeTimeout: time.Duration(HttpTimeout) * time.Second,
 	}
 
 	res, err = client.Do(req)
