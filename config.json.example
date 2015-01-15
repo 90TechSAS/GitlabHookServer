@@ -7,6 +7,7 @@
 	"SlackAPIToken":	"xoxp-2123456786-313456781-3123456782-5abcdd",
 	"ChannelPrefix":	"dev-",
 	"Verbose":			true,
+	"HttpTimeout": 		30,
 	"Redirect": 		[
 		{
 			"Channel": "chan1",
