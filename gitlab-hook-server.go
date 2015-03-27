@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/nurza/logo"
 
-	"./data"
+	"github.com/ZenlabsFR/GitlabHookServer/data"
 
 	"bytes"
 	"encoding/json"
