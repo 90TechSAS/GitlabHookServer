@@ -343,10 +343,13 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var dateString = date.Format("02 Jan 06 15:04")
 
 		// Message
-		lastCommit := j.Commits[len(j.Commits)-1]
-		message += "[PUSH] " + n + "Push on *" + j.Repository.Name + "* by *" + j.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
-		message += "Last commit : <" + lastCommit.Url + "|" + lastCommit.Id + "> :" + n                                                                  // Second line
-		message += "```" + MessageEncode(lastCommit.Message) + "```"                                                                                     // Third line (last commit message)
+		commitCount := strconv.FormatFloat(j.Total_commits_count, 'f', 0, 64)
+		message += "Push on *" + j.Repository.Name + "* by *" + j.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
+		message += commitCount + "commits :" + n // Second line
+		for i := range j.Commits { 
+			c := j.Commits[i]
+			message += "<" + c.Url + "|" + c.Id[0:7] + ">: " + "_" + MessageEncode(c.Message) + "_" + n
+		}
 		SendSlackMessage(j.Repository.Name, message, Push)
 	}
 }
