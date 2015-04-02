@@ -36,6 +36,7 @@ var (
 	SlackAPIToken   string     // Slack API Token
 	ChannelPrefix   string     // Slack channel prefix
 	Verbose         bool       // Enable verbose mode
+	ShowAllCommits  bool       // Show all commits rather than latest
 	HttpTimeout     int        // Http timeout in second
 	Redirect        []struct { // List of channel redirect
 		Channel      string
@@ -85,6 +86,7 @@ func LoadConf() {
 		SlackAPIToken   string
 		ChannelPrefix   string
 		Verbose         bool
+		ShowAllCommits  bool
 		HttpTimeout     float64
 		Redirect        []struct {
 			Channel      string
@@ -113,6 +115,7 @@ func LoadConf() {
 	SlackAPIToken = conf.SlackAPIToken
 	ChannelPrefix = conf.ChannelPrefix
 	Verbose = conf.Verbose
+	ShowAllCommits = conf.ShowAllCommits
 	HttpTimeout = int(conf.HttpTimeout)
 	Redirect = conf.Redirect
 }
@@ -343,12 +346,19 @@ func (s *PushServ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var dateString = date.Format("02 Jan 06 15:04")
 
 		// Message
+		lastCommit := j.Commits[len(j.Commits)-1]
 		commitCount := strconv.FormatFloat(j.Total_commits_count, 'f', 0, 64)
-		message += "Push on *" + j.Repository.Name + "* by *" + j.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
-		message += commitCount + "commits :" + n // Second line
-		for i := range j.Commits { 
-			c := j.Commits[i]
-			message += "<" + c.Url + "|" + c.Id[0:7] + ">: " + "_" + MessageEncode(c.Message) + "_" + n
+		if ShowAllCommits {
+			message += "Push on *" + j.Repository.Name + "* by *" + j.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
+			message += commitCount + "commits :" + n // Second line
+			for i := range j.Commits {
+				c := j.Commits[i]
+				message += "<" + c.Url + "|" + c.Id[0:7] + ">: " + "_" + MessageEncode(c.Message) + "_" + n
+			}
+		} else {
+			message += "[PUSH] " + n + "Push on *" + j.Repository.Name + "* by *" + j.User_name + "* at *" + dateString + "* on branch *" + j.Ref + "*:" + n // First line
+			message += "Last commit : <" + lastCommit.Url + "|" + lastCommit.Id + "> :" + n                                                                  // Second line
+			message += "```" + MessageEncode(lastCommit.Message) + "```"                                                                                     // Third line (last commit message)
 		}
 		SendSlackMessage(j.Repository.Name, message, Push)
 	}
